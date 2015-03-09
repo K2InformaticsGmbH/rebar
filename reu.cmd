@@ -12,6 +12,6 @@ goto end
 
 :silent
 echo running all tests for project, reporting only failures
-rebar skip_deps=true eunit | grep -re "---TEST---\|assertion_failed\|\*failed\*\|\*timeout\*\|\*\*throw"
+rebar skip_deps=true eunit | grep -re "---TEST---\|assertion_failed\|\*failed\*\|\*timed\ out\*\|\*\*throw"
 
 :end
