@@ -1,31 +1,42 @@
 @echo off
 
-if "%1%"=="" goto raw
-if "%2%"=="" goto skip
-if "%3%"=="" goto single
-if "%4%"=="" goto double
-if "%5%"=="" goto triple
+if "%1"=="" goto raw
+if "%2"=="" goto skip
+if "%3"=="" goto single
+if "%4"=="" goto double
+if "%5"=="" goto triple
 
-call rebar %1%=%2%,%3%;%4%;%5% compile
+echo rebar compile %1=%2,%3,%4,%5
+call rebar compile %1=%2,%3,%4,%5
 goto end
 
 :triple
-call rebar %1%=%2%,%3%;%4% compile
+echo triple
+echo rebar compile %1=%2,%3;%4 
+call rebar compile %1=%2,%3;%4 
 goto end
 
 :double
-call rebar %1%=%2%,%3% compile
+echo double
+echo rebar compile %1=%2,%3
+call rebar compile %1=%2,%3 
 goto end
 
 :single
-call rebar %1%=%2% compile
+echo single skip
+echo rebar compile %1=%2
+call rebar compile %1=%2 
 goto end
 
 :skip
-call rebar %1%=true compile
+echo skip
+echo rebar compile %1=true 
+call rebar compile %1=true
 goto end
 
 :raw
+echo raw
+echo rebar compile
 call rebar compile
 
 :end
