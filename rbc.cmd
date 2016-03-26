@@ -1,5 +1,6 @@
 @echo off
 
+if "%1"=="-deps" goto deps
 if "%1"=="" goto raw
 if "%2"=="" goto skip
 if "%3"=="" goto single
@@ -12,8 +13,8 @@ goto end
 
 :triple
 echo triple
-echo rebar compile %1=%2,%3;%4 
-call rebar compile %1=%2,%3;%4 
+echo rebar compile %1=%2,%3,%4 
+call rebar compile %1=%2,%3,%4 
 goto end
 
 :double
@@ -38,5 +39,9 @@ goto end
 echo raw
 echo rebar compile
 call rebar compile
+
+:deps
+echo rebar compile skip deps=dderloci,erlscrypt
+call rebar compile skip_deps=dderloci,erlscrypt
 
 :end
