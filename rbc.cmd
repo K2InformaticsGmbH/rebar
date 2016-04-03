@@ -39,6 +39,7 @@ goto end
 echo raw
 echo rebar compile
 call rebar compile
+goto end
 
 :deps
 echo rebar compile skip deps=erloci,dderloci,erlscrypt
