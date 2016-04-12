@@ -56,7 +56,7 @@ eunit_test_() ->
                ?_assert(string:str(RebarOut, "myapp_mymod:") =/= 0)},
 
               {"Tests are only run once",
-               ?_assert(string:str(RebarOut, "All 2 tests passed") =/= 0)}]
+               ?_assert(string:str(RebarOut, "2 tests passed") =/= 0)}]
      end}.
 
 eunit_with_suites_and_tests_test_() ->
@@ -80,7 +80,7 @@ eunit_with_suites_and_tests_test_() ->
                 ?_assert(string:str(RebarOut, "myapp_mymod:") =:= 0)},
 
                {"Selected suite tests are only run once",
-                ?_assert(string:str(RebarOut, "All 4 tests passed") =/= 0)}]
+                ?_assert(string:str(RebarOut, "4 tests passed") =/= 0)}]
       end},
      {"Ensure EUnit runs selected _tests suites",
       setup, fun() ->
@@ -102,7 +102,7 @@ eunit_with_suites_and_tests_test_() ->
                 ?_assert(string:str(RebarOut, "myapp_mymod:") =:= 0)},
 
                {"Selected suite tests are only run once",
-                ?_assert(string:str(RebarOut, "All 2 tests passed") =/= 0)}]
+                ?_assert(string:str(RebarOut, "2 tests passed") =/= 0)}]
       end},
      {"Ensure EUnit runs a specific test defined in a selected suite",
       setup, fun() ->
@@ -131,7 +131,7 @@ eunit_with_suites_and_tests_test_() ->
 
                {"Selected suite's generator test raises an error",
                 ?_assert(string:str(RebarOut,
-                                    "assertEqual_failed") =/= 0)},
+                                    "assertEqual") =/= 0)},
 
                {"Selected suite tests is run once",
                 ?_assert(string:str(RebarOut, "Failed: 1.") =/= 0)}]
@@ -154,7 +154,7 @@ eunit_with_suites_and_tests_test_() ->
                                "myapp_mymod2_tests:myfunc2_test/0") =/= 0)]},
 
                {"Selected suite tests are run once",
-                ?_assert(string:str(RebarOut, "All 3 tests passed") =/= 0)}]
+                ?_assert(string:str(RebarOut, "3 tests passed") =/= 0)}]
       end},
      {"Ensure EUnit runs specific test in a _tests suite",
       setup,
@@ -190,7 +190,7 @@ eunit_with_suites_and_tests_test_() ->
                           =/= 0)]},
 
                {"Selected suite tests is run once",
-                ?_assert(string:str(RebarOut, "All 2 tests passed") =/= 0)}]
+                ?_assert(string:str(RebarOut, "2 tests passed") =/= 0)}]
       end},
      {"Ensure EUnit runs a specific test by qualified function name",
       setup,
@@ -231,7 +231,21 @@ eunit_with_suites_and_tests_test_() ->
                 [?_assert(string:str(RebarOut,
                                      "Failed: 1.  Skipped: 0.  Passed: 1")
                           =/= 0)]}]
-      end}].
+      end},
+     {"Ensure EUnit runs a test with eunit_first_files",
+      setup,
+      fun() ->
+              setup_eunit_first_files(),
+              rebar("eunit")
+      end,
+      fun teardown/1,
+      fun(RebarOut) ->
+              [
+               {"Don't pass tests without erl_first_file",
+                [?_assert(string:str(RebarOut,
+                                     "Test passed.") =/= 0)]}]
+      end}
+    ].
 
 cover_test_() ->
     {"Ensure Cover runs with tests in a test dir and no defined suite",
@@ -311,7 +325,11 @@ environment_test_() ->
 
 assert_rebar_runs() ->
     prepare_rebar_script(),
-    ?assert(string:str(os:cmd(filename:nativename("./" ++ ?TMP_DIR ++ "rebar")),
+    {ok, Cwd} = file:get_cwd(),
+    ok = file:set_cwd(?TMP_DIR),
+    RebarOut = os:cmd(filename:nativename("./rebar")),
+    ok = file:set_cwd(Cwd),
+    ?assert(string:str(RebarOut,
                        "No command to run specified!") =/= 0).
 
 basic_setup_test_() ->
@@ -420,6 +438,19 @@ code_path_test_() ->
          "myfunc3() -> ok.\n",
          "mygenerator_test_() -> [?_assertEqual(true, false)].\n"]).
 
+-define(myapp_mymod4,
+        ["-module(myapp_mymod4).\n",
+         "-compile({parse_transform, myapp_mymod4_parse_transform}).\n",
+         "-include_lib(\"eunit/include/eunit.hrl\").\n",
+         "-export([ok/0]).\n",
+         "pt_test() -> ?assert(myapp_mymod4:ok()).\n"]).
+
+-define(myapp_mymod4_parse_transform,
+        ["-module(myapp_mymod4_parse_transform).\n",
+         "-export([parse_transform/2]).\n",
+         "parse_transform(Forms, _Options) ->\n",
+         "Forms ++ [{function,29,ok,0,[{clause,9,[],[],[{atom,9,true}]}]}].\n"]).
+
 -define(mysuite,
         ["-module(mysuite).\n",
          "-export([all_test_/0]).\n",
@@ -461,6 +492,15 @@ setup_project_with_multiple_modules() ->
     ok = file:write_file("test/myapp_mymod2_tests.erl", ?myapp_mymod2_tests),
     ok = file:write_file("src/myapp_mymod2.erl", ?myapp_mymod2),
     ok = file:write_file("src/myapp_mymod3.erl", ?myapp_mymod3).
+
+setup_eunit_first_files() ->
+    setup_environment(),
+    rebar("create-app appid=myapp"),
+    ok = file:write_file("src/myapp_mymod4.erl", ?myapp_mymod4),
+    ok = file:write_file("src/myapp_mymod4_parse_transform.erl",
+                ?myapp_mymod4_parse_transform),
+    ok = file:write_file("rebar.config",
+        "{erl_first_files, [\"src/myapp_mymod4_parse_transform.erl\"]}.\n").
 
 setup_cover_project() ->
     setup_basic_project(),

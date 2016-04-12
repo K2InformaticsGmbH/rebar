@@ -143,7 +143,7 @@ init_config({Options, _NonOptArgs}) ->
     %% Keep track of how many operations we do, so we can detect bad commands
     BaseConfig1 = rebar_config:set_xconf(BaseConfig, operations, 0),
     %% Initialize vsn cache
-    rebar_config:set_xconf(BaseConfig1, vsn_cache, dict:new()).
+    rebar_utils:init_vsn_cache(BaseConfig1).
 
 init_config1(BaseConfig) ->
     %% Determine the location of the rebar executable; important for pulling
@@ -214,6 +214,12 @@ run_aux(BaseConfig, Commands) ->
         {error,{already_started,crypto}} -> ok
     end,
 
+    %% Make sure memoization server is running
+    case rmemo:start() of
+        {ok, _} -> ok;
+        {error, {already_started, _}} -> ok
+    end,
+
     %% Convert command strings to atoms
     CommandAtoms = [list_to_atom(C) || C <- Commands],
 
@@ -278,7 +284,12 @@ help() ->
                       {"freebsd", compile, "c_src/freebsd_tweaks.sh"},
                       {eunit, "touch file2.out"},
                       {compile, "touch postcompile.out"}]}
-       ]).
+       ]),
+    ?CONSOLE(
+       "Environment variables:~n"
+       "  REBAR_DEPS_PREFER_LIBS to look for dependecies in system libs prior fetching.~n"
+       "  REBAR_VSN_CACHE_FILE to load vsn cache from and save to specified file.~n"
+       "~n", []).
 
 %%
 %% Parse command line arguments using getopt and also filtering out any
@@ -450,11 +461,17 @@ eunit       [suite[s]=foo]               Run EUnit tests in foo.erl and
             [random_suite_order=Seed]    with a random seed for the PRNG, or a
                                          specific one.
 
-ct          [suite[s]=] [case=]          Run common_test suites
+ct          [suite[s]= [group[s]= [case[s]=]]] Run common_test suites
 
 qc                                       Test QuickCheck properties
 
 xref                                     Run cross reference analysis
+
+dialyze                                  Analyze the code for discrepancies
+build-plt                                Build project-specific PLT
+check-plt                                Check the PLT for consistency and
+                                         rebuild it if it is not up-to-date
+delete-plt                               Delete project-specific PLT
 
 shell                                    Start a shell similar to
                                          'erl -pa ebin -pa deps/*/ebin'
@@ -489,7 +506,9 @@ option_spec_list() ->
      {profile,  $p, "profile",  undefined,
       "Profile this run of rebar. Via profiler= you can optionally select "
       "either fprof (default) or eflame. The result can be found in "
-      "fprof.analysis or eflame.svg."},
+      "fprof.analysis or eflame.svg. Additionally, in fprof mode, if "
+      "erlgrind can be found in $PATH, a Cachegrind file (fprof.cgrind) "
+      "will be generated as well."},
      {keep_going, $k, "keep-going", undefined,
       "Keep running after a command fails"},
      {recursive, $r, "recursive", boolean,
@@ -527,7 +546,9 @@ filter_flags(Config, [Item | Rest], Commands) ->
 
 command_names() ->
     [
+     "build-plt",
      "check-deps",
+     "check-plt",
      "clean",
      "compile",
      "create",
@@ -535,7 +556,9 @@ command_names() ->
      "create-lib",
      "create-node",
      "ct",
+     "delete-plt",
      "delete-deps",
+     "dialyze",
      "doc",
      "eunit",
      "escriptize",

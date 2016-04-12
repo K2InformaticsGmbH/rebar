@@ -1,20 +1,17 @@
-.PHONY: clean dialyzer_warnings xref_warnings deps test
+.PHONY: clean xref_warnings deps test test_eunit test_inttest
 
 REBAR=$(PWD)/rebar
 RETEST=$(PWD)/deps/retest/retest
-OTPVSNCMD='io:fwrite("~s",[rebar_utils:otp_release()]), halt().'
-OTPVSN=$(shell erl -pa ebin/ -noshell -eval $(OTPVSNCMD))
-PLT_FILENAME=~/.dialyzer_rebar_$(OTPVSN)_plt
+LOG_LEVEL?=debug
+RT_TARGETS?=inttest
 
 all:
 	./bootstrap
 
 clean:
-	@rm -rf rebar ebin/*.beam inttest/rt.work rt.work .eunit
-	@rm -f .rebarinfo
+	@rm -rf rebar .rebar/erlcinfo ebin/*.beam inttest/rt.work rt.work .eunit
 
 distclean: clean
-	@rm -f dialyzer_warnings
 	@rm -rf deps
 
 debug:
@@ -26,36 +23,10 @@ xref:
 	@./rebar xref
 
 build_plt:
-	-dialyzer --build_plt --output_plt $(PLT_FILENAME) --apps \
-		erts \
-		kernel \
-		stdlib \
-		crypto \
-		compiler \
-		asn1 \
-		eunit \
-		tools \
-		ssl \
-		edoc \
-		reltool \
-		snmp \
-		sasl
-	-dialyzer --add_to_plt --plt $(PLT_FILENAME) \
-		--output_plt $(PLT_FILENAME) \
-		--apps diameter
+	@./rebar build-plt
 
-dialyzer: dialyzer_warnings
-	@diff -U0 dialyzer_reference dialyzer_warnings
-
-dialyzer_warnings:
-	-@dialyzer --plt $(PLT_FILENAME) -q -nn -n ebin \
-		-Wunmatched_returns \
-		-Werror_handling \
-		-Wrace_conditions \
-		> dialyzer_warnings
-
-typer:
-	typer -r --plt $(PLT_FILENAME) ./src -I ./include
+dialyzer:
+	@./rebar dialyze
 
 binary: VSN = $(shell ./rebar -V)
 binary: clean all
@@ -63,11 +34,15 @@ binary: clean all
 	(cd ../rebar.wiki && git commit -m "Update $(VSN)" rebar)
 
 deps:
-	@REBAR_EXTRA_DEPS=1 ./rebar get-deps
+	@REBAR_EXTRA_DEPS=1 $(REBAR) get-deps
 	@(cd deps/retest && $(REBAR) compile escriptize)
 
-test:
+test: test_eunit test_inttest
+
+test_eunit: all
 	@$(REBAR) eunit
-	@$(RETEST) -v inttest
+
+test_inttest: all deps
+	@$(RETEST) -l $(LOG_LEVEL) $(RT_TARGETS)
 
 travis: clean debug xref clean all deps test

@@ -35,65 +35,15 @@
 
 -include("rebar.hrl").
 
-%% ===================================================================
-%% Public API
-%% ===================================================================
-
-%% Supported configuration variables:
-%%
-%% * port_specs - Erlang list of tuples of the forms
-%%                {ArchRegex, TargetFile, Sources, Options}
-%%                {ArchRegex, TargetFile, Sources}
-%%                {TargetFile, Sources}
-%%
-%% * port_env - Erlang list of key/value pairs which will control
-%%              the environment when running the compiler and linker.
-%%
-%%              By default, the following variables are defined:
-%%              CC       - C compiler
-%%              CXX      - C++ compiler
-%%              CFLAGS   - C compiler
-%%              CXXFLAGS - C++ compiler
-%%              LDFLAGS  - Link flags
-%%              ERL_CFLAGS  - default -I paths for erts and ei
-%%              ERL_LDFLAGS - default -L and -lerl_interface -lei
-%%              DRV_CFLAGS  - flags that will be used for compiling
-%%              DRV_LDFLAGS - flags that will be used for linking
-%%              EXE_CFLAGS  - flags that will be used for compiling
-%%              EXE_LDFLAGS - flags that will be used for linking
-%%              ERL_EI_LIBDIR - ei library directory
-%%              DRV_CXX_TEMPLATE  - C++ command template
-%%              DRV_CC_TEMPLATE   - C command template
-%%              DRV_LINK_TEMPLATE - Linker command template
-%%              EXE_CXX_TEMPLATE  - C++ command template
-%%              EXE_CC_TEMPLATE   - C command template
-%%              EXE_LINK_TEMPLATE - Linker command template
-%%              PORT_IN_FILES - contains a space separated list of input
-%%                   file(s), (used in command template)
-%%              PORT_OUT_FILE - contains the output filename (used in
-%%                   command template)
-%%
-%%              Note that if you wish to extend (vs. replace) these variables,
-%%              you MUST include a shell-style reference in your definition.
-%%              e.g. to extend CFLAGS, do something like:
-%%
-%%              {port_env, [{"CFLAGS", "$CFLAGS -MyOtherOptions"}]}
-%%
-%%              It is also possible to specify platform specific options
-%%              by specifying a triplet where the first string is a regex
-%%              that is checked against Erlang's system architecture string.
-%%              e.g. to specify a CFLAG that only applies to x86_64 on linux
-%%              do:
-%%
-%%              {port_env, [{"x86_64.*-linux", "CFLAGS",
-%%                           "$CFLAGS -X86Options"}]}
-%%
-
 -record(spec, {type::'drv' | 'exe',
                target::file:filename(),
                sources = [] :: [file:filename(), ...],
                objects = [] :: [file:filename(), ...],
                opts = [] ::list() | []}).
+
+%% ===================================================================
+%% Public API
+%% ===================================================================
 
 compile(Config, AppFile) ->
     case get_specs(Config, AppFile) of
@@ -164,12 +114,62 @@ info_help(Description) ->
        "~s.~n"
        "~n"
        "Valid rebar.config options:~n"
-       "  ~p~n"
-       "  ~p~n",
+       "port_specs - Erlang list of tuples of the forms~n"
+       "             {ArchRegex, TargetFile, Sources, Options}~n"
+       "             {ArchRegex, TargetFile, Sources}~n"
+       "             {TargetFile, Sources}~n"
+       "~n"
+       "             Examples:~n"
+       "             ~p~n"
+       "~n"
+       "port_env - Erlang list of key/value pairs which will control~n"
+       "           the environment when running the compiler and linker.~n"
+       "           Variables set in the surrounding system shell are taken~n"
+       "           into consideration when expanding port_env.~n"
+       "~n"
+       "           By default, the following variables are defined:~n"
+       "           CC       - C compiler~n"
+       "           CXX      - C++ compiler~n"
+       "           CFLAGS   - C compiler~n"
+       "           CXXFLAGS - C++ compiler~n"
+       "           LDFLAGS  - Link flags~n"
+       "           ERL_CFLAGS  - default -I paths for erts and ei~n"
+       "           ERL_LDFLAGS - default -L and -lerl_interface -lei~n"
+       "           DRV_CFLAGS  - flags that will be used for compiling~n"
+       "           DRV_LDFLAGS - flags that will be used for linking~n"
+       "           EXE_CFLAGS  - flags that will be used for compiling~n"
+       "           EXE_LDFLAGS - flags that will be used for linking~n"
+       "           ERL_EI_LIBDIR - ei library directory~n"
+       "           DRV_CXX_TEMPLATE  - C++ command template~n"
+       "           DRV_CC_TEMPLATE   - C command template~n"
+       "           DRV_LINK_TEMPLATE - Linker command template~n"
+       "           EXE_CXX_TEMPLATE  - C++ command template~n"
+       "           EXE_CC_TEMPLATE   - C command template~n"
+       "           EXE_LINK_TEMPLATE - Linker command template~n"
+       "~n"
+       "           Note that if you wish to extend (vs. replace) these variables,~n"
+       "           you MUST include a shell-style reference in your definition.~n"
+       "           e.g. to extend CFLAGS, do something like:~n"
+       "~n"
+       "           {port_env, [{\"CFLAGS\", \"$CFLAGS -MyOtherOptions\"}]}~n"
+       "~n"
+       "           It is also possible to specify platform specific options~n"
+       "           by specifying a triplet where the first string is a regex~n"
+       "           that is checked against Erlang's system architecture string.~n"
+       "           e.g. to specify a CFLAG that only applies to x86_64 on linux~n"
+       "           do:~n"
+       "           {port_env, [{\"x86_64.*-linux\", \"CFLAGS\",~n"
+       "                        \"$CFLAGS -X86Options\"}]}~n"
+       "~n"
+       "Cross-arch environment variables to configure toolchain:~n"
+       "  REBAR_TARGET_ARCH to set the tool chain name to use~n"
+       "  REBAR_TARGET_ARCH_WORDSIZE (optional - "
+       "if CC fails to determine word size)~n"
+       "  fallback word size is 32~n"
+       "  REBAR_TARGET_ARCH_VSN (optional - "
+       "if a special version of CC/CXX is requested)~n",
        [
         Description,
-        {port_env, [{"CFLAGS", "$CFLAGS -Ifoo"},
-                    {"freebsd", "LDFLAGS", "$LDFLAGS -lfoo"}]},
         {port_specs, [{"priv/so_name.so", ["c_src/*.c"]},
                       {"linux", "priv/hello_linux", ["c_src/hello_linux.c"]},
                       {"linux", "priv/hello_linux", ["c_src/*.c"], [{env, []}]}]}
@@ -183,8 +183,10 @@ setup_env(Config, ExtraEnv) ->
 
     %% Get any port-specific envs; use port_env first and then fallback
     %% to port_envs for compatibility
-    RawPortEnv = rebar_config:get_list(Config, port_env,
-                          rebar_config:get_list(Config, port_envs, [])),
+    RawPortEnv = rebar_config:get_list(
+                   Config,
+                   port_env,
+                   rebar_config:get_list(Config, port_envs, [])),
 
     PortEnv = filter_env(RawPortEnv, []),
     Defines = get_defines(Config),
@@ -493,9 +495,10 @@ expand_command(TmplName, Env, InFiles, OutFile) ->
 
 %%
 %% Given a string, determine if it is expandable
-%%
+%% A string is defined as expandable if it contains itself
+%%  (eg. CFLAGS = -m64 $CFLAGS)
 is_expandable(InStr) ->
-    case re:run(InStr,"\\\$",[{capture,none}]) of
+    case re:run(InStr,"\\\$"++InStr,[{capture,none}]) of
         match -> true;
         nomatch -> false
     end.
@@ -568,9 +571,21 @@ erl_interface_dir(Subdir) ->
     end.
 
 default_env() ->
+    Arch = os:getenv("REBAR_TARGET_ARCH"),
+    Vsn = os:getenv("REBAR_TARGET_ARCH_VSN"),
     [
-     {"CC" , "cc"},
-     {"CXX", "c++"},
+     {"CC", get_tool(Arch, Vsn,"gcc", "cc")},
+     {"CXX", get_tool(Arch, Vsn,"g++", "c++")},
+     {"AR", get_tool(Arch, "ar", "ar")},
+     {"AS", get_tool(Arch, "as", "as")},
+     {"CPP", get_tool(Arch, Vsn, "cpp", "cpp")},
+     {"LD", get_tool(Arch, "ld", "ld")},
+     {"RANLIB", get_tool(Arch, Vsn, "ranlib", "ranlib")},
+     {"STRIP", get_tool(Arch, "strip", "strip")},
+     {"NM", get_tool(Arch, "nm", "nm")},
+     {"OBJCOPY", get_tool(Arch, "objcopy", "objcopy")},
+     {"OBJDUMP", get_tool(Arch, "objdump", "objdump")},
+
      {"DRV_CXX_TEMPLATE",
       "$CXX -c $CXXFLAGS $DRV_CFLAGS $PORT_IN_FILES -o $PORT_OUT_FILE"},
      {"DRV_CC_TEMPLATE",
@@ -588,9 +603,12 @@ default_env() ->
      {"EXE_CFLAGS" , "-g -Wall -fPIC -MMD $ERL_CFLAGS"},
      {"EXE_LDFLAGS", "$ERL_LDFLAGS"},
 
-     {"ERL_CFLAGS", lists:concat([" -I\"", erl_interface_dir(include),
-                                  "\" -I\"", filename:join(erts_dir(), "include"),
-                                  "\" "])},
+     {"ERL_CFLAGS", lists:concat(
+                      [
+                       " -I\"", erl_interface_dir(include),
+                       "\" -I\"", filename:join(erts_dir(), "include"),
+                       "\" "
+                      ])},
      {"ERL_EI_LIBDIR", lists:concat(["\"", erl_interface_dir(lib), "\""])},
      {"ERL_LDFLAGS"  , " -L$ERL_EI_LIBDIR -lerl_interface -lei"},
      {"ERLANG_ARCH"  , rebar_utils:wordsize()},
@@ -604,15 +622,15 @@ default_env() ->
      {"solaris.*-64$", "CXXFLAGS", "-D_REENTRANT -m64 $CXXFLAGS"},
      {"solaris.*-64$", "LDFLAGS", "-m64 $LDFLAGS"},
 
-     %% Linux specific flags for multiarch
-     {"linux.*-64$", "CFLAGS", "-m64 $CFLAGS"},
-     {"linux.*-64$", "CXXFLAGS", "-m64 $CXXFLAGS"},
-     {"linux.*-64$", "LDFLAGS", "$LDFLAGS"},
-
      %% OS X Leopard flags for 64-bit
      {"darwin9.*-64$", "CFLAGS", "-m64 $CFLAGS"},
      {"darwin9.*-64$", "CXXFLAGS", "-m64 $CXXFLAGS"},
      {"darwin9.*-64$", "LDFLAGS", "-arch x86_64 $LDFLAGS"},
+
+     %% OS X Lion onwards flags for 64-bit
+     {"darwin1[0-4].*-64$", "CFLAGS", "-m64 $CFLAGS"},
+     {"darwin1[0-4].*-64$", "CXXFLAGS", "-m64 $CXXFLAGS"},
+     {"darwin1[0-4].*-64$", "LDFLAGS", "-arch x86_64 $LDFLAGS"},
 
      %% OS X Snow Leopard, Lion, and Mountain Lion flags for 32-bit
      {"darwin1[0-2].*-32", "CFLAGS", "-m32 $CFLAGS"},
@@ -639,7 +657,17 @@ default_env() ->
      {"win32", "EXE_LINK_TEMPLATE",
       "$LINKER $PORT_IN_FILES $LDFLAGS $EXE_LDFLAGS /OUT:$PORT_OUT_FILE"},
      %% ERL_CFLAGS are ok as -I even though strictly it should be /I
-     {"win32", "ERL_LDFLAGS", " /LIBPATH:$ERL_EI_LIBDIR erl_interface.lib ei.lib"},
+     {"win32", "ERL_LDFLAGS",
+      " /LIBPATH:$ERL_EI_LIBDIR erl_interface.lib ei.lib"},
      {"win32", "DRV_CFLAGS", "/Zi /Wall $ERL_CFLAGS"},
      {"win32", "DRV_LDFLAGS", "/DLL $ERL_LDFLAGS"}
     ].
+
+get_tool(Arch, Tool, Default) ->
+    get_tool(Arch, false, Tool, Default).
+
+get_tool(false, _, _, Default) -> Default;
+get_tool("", _, _, Default) -> Default;
+get_tool(Arch, false, Tool, _Default) -> Arch++"-"++Tool;
+get_tool(Arch, "", Tool, _Default) -> Arch++"-"++Tool;
+get_tool(Arch, Vsn, Tool, _Default) -> Arch++"-"++Tool++"-"++Vsn.

@@ -129,21 +129,10 @@ remove_common_path1([Part | RestFilename], [Part | RestPath]) ->
 remove_common_path1(FilenameParts, _) ->
     filename:join(FilenameParts).
 
-
-compile(Unit, Config, CompileFn) ->
-    case CompileFn(Unit, Config) of
-        ok ->
-            ok;
-        skipped ->
-            skipped;
-        Error ->
-            Error
-    end.
-
 compile_each([], _Config, _CompileFn) ->
     ok;
 compile_each([Unit | Rest], Config, CompileFn) ->
-    case compile(Unit, Config, CompileFn) of
+    case CompileFn(Unit, Config) of
         ok ->
             ?CONSOLE("Compiled ~s\n", [unit_source(Unit)]);
         {ok, Warnings} ->
@@ -152,11 +141,16 @@ compile_each([Unit | Rest], Config, CompileFn) ->
         skipped ->
             ?INFO("Skipped ~s\n", [unit_source(Unit)]);
         Error ->
+            maybe_report(Error),
             ?CONSOLE("Compiling ~s failed:\n",
                      [maybe_absname(Config, unit_source(Unit))]),
-            maybe_report(Error),
             ?DEBUG("Compilation failed: ~p\n", [Error]),
-            ?FAIL
+            case rebar_config:get_xconf(Config, keep_going, false) of
+                false ->
+                    ?FAIL;
+                true ->
+                    ?WARN("Continuing after build error\n", [])
+            end
     end,
     compile_each(Rest, Config, CompileFn).
 
@@ -179,12 +173,18 @@ compile_queue(Config, Pids, Targets) ->
                     compile_queue(Config, Pids, Rest)
             end;
 
-        {fail, {_, {source, Source}}=Error} ->
-            ?CONSOLE("Compiling ~s failed:\n",
-                     [maybe_absname(Config, Source)]),
+        {fail, {_, {source, Unit}}=Error} ->
             maybe_report(Error),
+            ?CONSOLE("Compiling ~s failed:\n",
+                     [maybe_absname(Config, unit_source(Unit))]),
             ?DEBUG("Worker compilation failed: ~p\n", [Error]),
-            ?FAIL;
+            case rebar_config:get_xconf(Config, keep_going, false) of
+                false ->
+                    ?FAIL;
+                true ->
+                    ?WARN("Continuing after build error\n", []),
+                    compile_queue(Config, Pids, Targets)
+            end;
 
         {compiled, Unit, Warnings} ->
             report(Warnings),
@@ -213,7 +213,7 @@ compile_worker(QueuePid, Config, CompileFn) ->
     QueuePid ! {next, self()},
     receive
         {compile, Source} ->
-            case catch(compile(Source, Config, CompileFn)) of
+            case catch(CompileFn(Source, Config)) of
                 {ok, Ws} ->
                     QueuePid ! {compiled, Source, Ws},
                     compile_worker(QueuePid, Config, CompileFn);
@@ -225,7 +225,12 @@ compile_worker(QueuePid, Config, CompileFn) ->
                     compile_worker(QueuePid, Config, CompileFn);
                 Error ->
                     QueuePid ! {fail, {{error, Error}, {source, Source}}},
-                    ok
+                    case rebar_config:get_xconf(Config, keep_going, false) of
+                        false ->
+                            ok;
+                        true ->
+                            compile_worker(QueuePid, Config, CompileFn)
+                    end
             end;
 
         empty ->
