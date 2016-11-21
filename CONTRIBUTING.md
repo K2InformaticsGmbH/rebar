@@ -76,10 +76,6 @@ To do that, run `make check`. If you didn't build via `make debug` at first, the
 and [Dialyzer](http://www.erlang.org/doc/man/dialyzer.html), causing a test 
 failure.  
 If that happens, running `make clean` before running `make check` could solve the problem.  
-If you change any of the files with known but safe to ignore Dialyzer warnings, you may  
-have to adapt the line number(s) in [dialyzer_reference](dialyzer_reference). If you do that, 
-do not remove the  
-leading blank line.
 
 #### Structuring your commits
 

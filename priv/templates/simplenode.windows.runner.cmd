@@ -6,6 +6,9 @@
 @rem which is assumed to be the node root.
 @for /F "delims=" %%I in ("%~dp0..") do @set node_root=%%~fI
 
+@rem CWD to the node root directory
+@cd %node_root%
+
 @set releases_dir=%node_root%\releases
 
 @rem Parse ERTS version and release version from start_erl.data
@@ -14,8 +17,18 @@
     @call :set_trim release_version %%J
 )
 
-@set vm_args=%releases_dir%\%release_version%\vm.args
-@set sys_config=%releases_dir%\%release_version%\sys.config
+@if exist "%releases_dir%\%release_version%\vm.args" (
+    @set vm_args="%releases_dir%\%release_version%\vm.args"
+) else (
+    @set vm_args="%node_root%\etc\vm.args"
+)
+
+@if exist "%releases_dir%\%release_version%\sys.config" (
+    @set sys_config="%releases_dir%\%release_version%\sys.config"
+) else (
+    @set sys_config="%node_root%\etc\app.config"
+)
+
 @set node_boot_script=%releases_dir%\%release_version%\%node_name%
 @set clean_boot_script=%releases_dir%\%release_version%\start_clean
 

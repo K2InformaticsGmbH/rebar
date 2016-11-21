@@ -30,7 +30,6 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include_lib("kernel/include/file.hrl").
--include_lib("deps/retest/include/retest.hrl").
 
 -define(MODULES,
         [foo,
@@ -51,25 +50,43 @@
          "c/test4.proto",
          "c/d/test5.proto"]).
 
+setup([Target]) ->
+  retest_utils:load_module(filename:join(Target, "inttest_utils.erl")),
+  ok.
+
 files() ->
     [
-     {copy, "../../rebar", "rebar"},
      {copy, "rebar.config", "rebar.config"},
      {copy, "rebar2.config", "rebar2.config"},
+     {copy, "rebar.bad.config", "rebar.bad.config"},
      {copy, "include", "include"},
      {copy, "src", "src"},
      {copy, "proto", "proto"},
+     {copy, "proto.bad", "proto.bad"},
      {copy, "mock", "deps"},
      {create, "ebin/foo.app", app(foo, ?MODULES ++ ?GENERATED_MODULES)}
-    ].
+    ] ++ inttest_utils:rebar_setup().
 
 run(_Dir) ->
     % perform test obtaining the .proto files from src dir
-    ok = run_from_dir("src", "rebar.config"),
+    ok = run_from_dir(success_expected, "src", "rebar.config"),
     % perform test obtaining the .proto files from proto dir
-    ok = run_from_dir("proto", "rebar2.config").
+    ok = run_from_dir(success_expected, "proto", "rebar2.config"),
+    % perform a test where a failure is expected
+    ok = run_from_dir(fail_expected, "proto.bad", "rebar.bad.config").
 
-run_from_dir(ProtoDir, ConfigFile) ->
+run_from_dir(fail_expected, _ProtoDir, ConfigFile) ->
+    %% we expect a failure to happen, however rebar should not crash;
+    %% We make sure of that by scanning the error.
+    {error, {stopped, {1, Error}}} = retest_sh:run("./rebar --config "
+                                                   ++ ConfigFile
+                                                   ++ " compile",
+                                                   []),
+    %% No matches of the string 'EXIT' should occur, these
+    %% indicate a rebar crash and not a exit with error.
+    0 = string:str(lists:flatten(Error), "'EXIT'"),
+    ok;
+run_from_dir(success_expected, ProtoDir, ConfigFile) ->
     ?assertMatch({ok, _}, retest_sh:run("./rebar --config "
                                         ++ ConfigFile
                                         ++ " clean",
@@ -84,7 +101,7 @@ run_from_dir(ProtoDir, ConfigFile) ->
     %% the .hrl file was generated before foo was compiled.
     ok = check_beams_generated(),
 
-    ?DEBUG("Verifying recompilation~n", []),
+    retest_log:log(debug, "Verifying recompilation~n", []),
     TestErl = hd(generated_erl_files()),
     TestProto = hd(source_proto_files(ProtoDir)),
     make_proto_newer_than_erl(TestProto, TestErl),
@@ -96,7 +113,7 @@ run_from_dir(ProtoDir, ConfigFile) ->
     TestMTime2 = read_mtime(TestErl),
     ?assert(TestMTime2 > TestMTime1),
 
-    ?DEBUG("Verifying recompilation with no changes~n", []),
+    retest_log:log(debug, "Verifying recompilation with no changes~n", []),
     TestMTime3 = read_mtime(TestErl),
     ?assertMatch({ok, _}, retest_sh:run("./rebar --config "
                                         ++ ConfigFile
@@ -105,7 +122,7 @@ run_from_dir(ProtoDir, ConfigFile) ->
     TestMTime4 = read_mtime(TestErl),
     ?assert(TestMTime3 =:= TestMTime4),
 
-    ?DEBUG("Verify cleanup~n", []),
+    retest_log:log(debug, "Verify cleanup~n", []),
     ?assertMatch({ok, _}, retest_sh:run("./rebar --config "
                                         ++ ConfigFile
                                         ++ " clean",

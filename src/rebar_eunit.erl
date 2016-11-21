@@ -72,6 +72,8 @@
 %% for internal use only
 -export([info/2]).
 
+-dialyzer({no_missing_calls, pre15b02_eunit_primitive/3}).
+
 -include("rebar.hrl").
 
 -define(EUNIT_DIR, ".eunit").
@@ -126,6 +128,7 @@ info_help(Description) ->
        "               name starts with bar and, if no such test exists,~n"
        "               run the test whose name starts with bar in the~n"
        "               suite's _tests module)~n"
+       "  test[s]=\"foo:bar_test\" (Run bar_test located in module foo)~n"
        "  random_suite_order=true (Run tests in random order)~n"
        "  random_suite_order=Seed (Run tests in random order,~n"
        "                           with the PRNG seeded with Seed)~n"
@@ -458,7 +461,7 @@ make_test_primitives(RawTests) ->
                             %% Generator
                             MakePrimitive(generator, M, F2)
                     end,
-                [NewFunction|Acc]
+                [eunit_module_suite(M, NewFunction)|Acc]
         end,
     lists:foldl(F, [], RawTests).
 
@@ -469,6 +472,11 @@ pre15b02_eunit_primitive(test, M, F) ->
     eunit_test:function_wrapper(M, F);
 pre15b02_eunit_primitive(generator, M, F) ->
     {generator, eunit_test:function_wrapper(M, F)}.
+
+% Add a test group for eunit_surefire to be able to deduce the testsuite.
+% Calling eunit:test({module, M}) does exactly this as well.
+eunit_module_suite(M, X) ->
+    {"module '" ++ atom_to_list(M) ++ "'", X}.
 
 %%
 %% == run tests ==

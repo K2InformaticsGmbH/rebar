@@ -4,8 +4,8 @@
 *.orig
 .*.swp
 /rt.work
-/dialyzer_warnings
 /rebar.cmd
 /.eunit
 /deps
 /.rebar
+env

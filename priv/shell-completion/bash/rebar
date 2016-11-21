@@ -17,14 +17,18 @@ _rebar()
         --keep-going \
         --recursive \
         --version"
-    cmdsnvars="check-deps \
+    cmdsnvars=" \
+        build-plt \
+        check-deps \
         clean \
         compile \
+        check-plt \
         create \
         create-app \
         create-lib \
         create-node \
         ct \
+        dialyze \
         doc \
         delete-deps \
         escriptize \
@@ -51,11 +55,12 @@ _rebar()
         jobs= \
         suites= \
         verbose=1 \
+        libid= \
         appid= \
+        nodeid= \
         overlay_vars= \
         previous_release= \
         profiler= \
-        nodeid= \
         root_dir= \
         skip_deps=true \
         skip_apps= \

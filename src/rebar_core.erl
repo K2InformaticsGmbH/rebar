@@ -35,6 +35,7 @@
 %% Internal functions
 %% ===================================================================
 
+-spec help(rebar_config:config(), [atom()]) -> ok.
 help(ParentConfig, Commands) ->
     %% get all core modules
     {ok, AnyDirModules} = application:get_env(rebar, any_dir_modules),
@@ -64,6 +65,7 @@ help(ParentConfig, Commands) ->
                             end, Modules)
       end, Commands).
 
+-spec process_commands([atom()], rebar_config:config()) -> ok.
 process_commands([], ParentConfig) ->
     AbortTrapped = rebar_config:get_xconf(ParentConfig, abort_trapped, false),
     case {get_operations(ParentConfig), AbortTrapped} of
@@ -104,7 +106,7 @@ process_commands([Command | Rest], ParentConfig) ->
                                                       ParentConfig2),
             %% Wipe out vsn cache to avoid invalid hits when
             %% dependencies are updated
-            rebar_config:set_xconf(ParentConfig3, vsn_cache, dict:new())
+            rebar_utils:init_vsn_cache(ParentConfig3)
         catch
             throw:rebar_abort ->
                 case rebar_config:get_xconf(ParentConfig1, keep_going, false) of
@@ -316,7 +318,7 @@ remember_cwd_predirs(Cwd, Predirs) ->
                         {ok, Existing} ->
                             ?ABORT("Internal consistency assertion failed.~n"
                                    "sub_dir ~s already associated with ~s.~n"
-                                   "Duplicate sub_dirs or deps entries?",
+                                   "Duplicate sub_dirs or deps entries?~n",
                                    [Dir, Existing])
                     end
             end,
