@@ -42,7 +42,7 @@ call rebar compile
 goto end
 
 :deps
-echo rebar compile skip deps=erloci,dderloci,erlscrypt
-call rebar compile skip_deps=erloci,dderloci,erlscrypt
+echo rebar compile skip_deps=erloci,erlscrypt
+call rebar compile skip_deps=erloci,erlscrypt
 
 :end

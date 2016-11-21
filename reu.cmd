@@ -2,7 +2,8 @@
 if "%1"=="" goto verbose
 if "%1"=="-silent" goto silent
 cls
-rebar skip_deps=true eunit suites=%1%
+echo rebar skip_deps=true eunit suites=%1
+rebar skip_deps=true eunit suites=%1
 goto end
 
 :verbose
