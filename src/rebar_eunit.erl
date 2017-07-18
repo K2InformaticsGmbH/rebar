@@ -54,8 +54,8 @@
 %%   </li>
 %%   <li>
 %%      tests="baz"- For every existing suite, run the first test whose
-%%      name starts with bar and, if no such test exists, run the test
-%%      whose name starts with bar in the suite's _tests module
+%%      name starts with baz and, if no such test exists, run the test
+%%      whose name starts with baz in the suite's _tests module
 %%   </li>
 %% </ul>
 %% Additionally, for projects that have separate folders for the core
@@ -293,9 +293,9 @@ randomize_suites(Config, Modules) ->
     end.
 
 randomize_suites1(Modules, Seed) ->
-    _ = random:seed(35, Seed, 1337),
+    _ = rebar_rnd:seed({35, Seed, 1337}),
     ?CONSOLE("Randomizing suite order with seed ~b~n", [Seed]),
-    [X||{_,X} <- lists:sort([{random:uniform(), M} || M <- Modules])].
+    [X||{_,X} <- lists:sort([{rebar_rnd:uniform(), M} || M <- Modules])].
 
 %%
 %% == get matching tests ==

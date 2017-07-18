@@ -220,6 +220,9 @@ run_aux(BaseConfig, Commands) ->
         {error, {already_started, _}} -> ok
     end,
 
+    %% Make sure rebar_rnd module is generated, compiled, and loaded
+    {ok, rebar_rnd} = rebar_rand_compat:init("rebar_rnd"),
+
     %% Convert command strings to atoms
     CommandAtoms = [list_to_atom(C) || C <- Commands],
 
@@ -590,7 +593,7 @@ unabbreviate_command_names([Command | Commands]) ->
         [FullCommand] ->
             [FullCommand | unabbreviate_command_names(Commands)];
         Candidates ->
-            ?ABORT("Found more than one match for abbreviated command name "
+            ?ABORT("Found more than one match for abbreviated command name"
                    " '~s',~nplease be more specific. Possible candidates:~n"
                    "  ~s~n",
                    [Command, string:join(Candidates, ", ")])

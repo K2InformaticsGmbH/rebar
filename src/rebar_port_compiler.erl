@@ -36,10 +36,11 @@
 -include("rebar.hrl").
 
 -record(spec, {type::'drv' | 'exe',
+               link_lang::'cc' | 'cxx',
                target::file:filename(),
                sources = [] :: [file:filename(), ...],
                objects = [] :: [file:filename(), ...],
-               opts = [] ::list() | []}).
+               opts = [] :: list() | []}).
 
 %% ===================================================================
 %% Public API
@@ -65,13 +66,15 @@ compile(Config, AppFile) ->
             %% Only relink if necessary, given the Target
             %% and list of new binaries
             lists:foreach(
-              fun(#spec{target=Target, objects=Bins, opts=Opts}) ->
+              fun(#spec{target=Target, objects=Bins, opts=Opts,
+                        link_lang=LinkLang}) ->
                       AllBins = [sets:from_list(Bins),
                                  sets:from_list(NewBins)],
                       Intersection = sets:intersection(AllBins),
                       case needs_link(Target, sets:to_list(Intersection)) of
                           true ->
-                              LinkTemplate = select_link_template(Target),
+                              LinkTemplate = select_link_template(LinkLang,
+                                                                  Target),
                               Env = proplists:get_value(env, Opts, SharedEnv),
                               Cmd = expand_command(LinkTemplate, Env,
                                                    string:join(Bins, " "),
@@ -140,12 +143,14 @@ info_help(Description) ->
        "           EXE_CFLAGS  - flags that will be used for compiling~n"
        "           EXE_LDFLAGS - flags that will be used for linking~n"
        "           ERL_EI_LIBDIR - ei library directory~n"
-       "           DRV_CXX_TEMPLATE  - C++ command template~n"
-       "           DRV_CC_TEMPLATE   - C command template~n"
-       "           DRV_LINK_TEMPLATE - Linker command template~n"
-       "           EXE_CXX_TEMPLATE  - C++ command template~n"
-       "           EXE_CC_TEMPLATE   - C command template~n"
-       "           EXE_LINK_TEMPLATE - Linker command template~n"
+       "           DRV_CXX_TEMPLATE      - C++ command template~n"
+       "           DRV_CC_TEMPLATE       - C command template~n"
+       "           DRV_LINK_TEMPLATE     - C Linker command template~n"
+       "           DRV_LINK_CXX_TEMPLATE - C++ Linker command template~n"
+       "           EXE_CXX_TEMPLATE      - C++ command template~n"
+       "           EXE_CC_TEMPLATE       - C command template~n"
+       "           EXE_LINK_TEMPLATE     - C Linker command template~n"
+       "           EXE_LINK_CXX_TEMPLATE - C++ Linker command template~n"
        "~n"
        "           Note that if you wish to extend (vs. replace) these variables,~n"
        "           you MUST include a shell-style reference in your definition.~n"
@@ -211,28 +216,71 @@ replace_extension(File, OldExt, NewExt) ->
 %%
 
 compile_sources(Config, Specs, SharedEnv) ->
-    lists:foldl(
-      fun(#spec{sources=Sources, type=Type, opts=Opts}, NewBins) ->
-              Env = proplists:get_value(env, Opts, SharedEnv),
-              compile_each(Config, Sources, Type, Env, NewBins)
-      end, [], Specs).
+    {NewBins, Db} =
+        lists:foldl(
+          fun(#spec{sources=Sources, type=Type, opts=Opts}, Acc) ->
+                  Env = proplists:get_value(env, Opts, SharedEnv),
+                  compile_each(Config, Sources, Type, Env, Acc)
+          end, {[], []}, Specs),
+    %% Rewrite clang compile commands database file only if something
+    %% was compiled.
+    case NewBins of
+        [] ->
+            ok;
+        _ ->
+            {ok, ClangDbFile} = file:open("compile_commands.json", [write]),
+            ok = io:fwrite(ClangDbFile, "[~n", []),
+            lists:foreach(fun(E) -> ok = io:fwrite(ClangDbFile, E, []) end, Db),
+            ok = io:fwrite(ClangDbFile, "]~n", []),
+            ok = file:close(ClangDbFile)
+    end,
+    NewBins.
 
-compile_each(_Config, [], _Type, _Env, NewBins) ->
-    lists:reverse(NewBins);
-compile_each(Config, [Source | Rest], Type, Env, NewBins) ->
+compile_each(_Config, [], _Type, _Env, {NewBins, CDB}) ->
+    {lists:reverse(NewBins), lists:reverse(CDB)};
+compile_each(Config, [Source | Rest], Type, Env, {NewBins, CDB}) ->
     Ext = filename:extension(Source),
     Bin = replace_extension(Source, Ext, ".o"),
+    Template = select_compile_template(Type, compiler(Ext)),
+    Cmd = expand_command(Template, Env, Source, Bin),
+    CDBEnt = cdb_entry(Source, Cmd, Rest),
+    NewCDB = [CDBEnt | CDB],
     case needs_compile(Source, Bin) of
         true ->
-            Template = select_compile_template(Type, compiler(Ext)),
-            Cmd = expand_command(Template, Env, Source, Bin),
             ShOpts = [{env, Env}, return_on_error, {use_stdout, false}],
             exec_compiler(Config, Source, Cmd, ShOpts),
-            compile_each(Config, Rest, Type, Env, [Bin | NewBins]);
+            compile_each(Config, Rest, Type, Env,
+                         {[Bin | NewBins], NewCDB});
         false ->
             ?INFO("Skipping ~s\n", [Source]),
-            compile_each(Config, Rest, Type, Env, NewBins)
+            compile_each(Config, Rest, Type, Env, {NewBins, NewCDB})
     end.
+
+%% Generate a clang compilation db entry for Src and Cmd
+cdb_entry(Src, Cmd, SrcRest) ->
+    %% Omit all variables from cmd, and use that as cmd in
+    %% CDB, because otherwise clang-* will complain about it.
+    CDBCmd = string:join(
+               lists:filter(
+                 fun("$"++_) -> false;
+                    (_)      -> true
+                 end,
+                 string:tokens(Cmd, " ")),
+               " "),
+
+    Cwd = rebar_utils:get_cwd(),
+    %% If there are more source files, make sure we end the CDB entry
+    %% with a comma.
+    Sep = case SrcRest of
+              [] -> "~n";
+              _  -> ",~n"
+          end,
+    %% CDB entry
+    ?FMT("{ \"file\"      : ~p~n"
+         ", \"directory\" : ~p~n"
+         ", \"command\"   : ~p~n"
+         "}~s",
+         [Src, Cwd, CDBCmd, Sep]).
 
 exec_compiler(Config, Source, Cmd, ShOpts) ->
     case rebar_utils:sh(Cmd, ShOpts) of
@@ -323,6 +371,7 @@ port_spec_from_legacy(Config, AppFile) ->
     Sources = port_sources(rebar_config:get_list(Config, port_sources,
                                                  ["c_src/*.c"])),
     #spec { type = target_type(Target),
+            link_lang = cc,
             target = maybe_switch_extension(os:type(), Target),
             sources = Sources,
             objects = port_objects(Sources) }.
@@ -343,9 +392,18 @@ get_port_spec(Config, OsType, {Arch, Target, Sources}) ->
     get_port_spec(Config, OsType, {Arch, Target, Sources, []});
 get_port_spec(Config, OsType, {_Arch, Target, Sources, Opts}) ->
     SourceFiles = port_sources(Sources),
+    LinkLang =
+        case lists:any(
+               fun(Src) -> compiler(filename:extension(Src)) == "$CXX" end,
+               SourceFiles)
+        of
+            true  -> cxx;
+            false -> cc
+        end,
     ObjectFiles = port_objects(SourceFiles),
     #spec{type=target_type(Target),
           target=maybe_switch_extension(OsType, Target),
+          link_lang=LinkLang,
           sources=SourceFiles,
           objects=ObjectFiles,
           opts=port_opts(Config, Opts)}.
@@ -495,10 +553,9 @@ expand_command(TmplName, Env, InFiles, OutFile) ->
 
 %%
 %% Given a string, determine if it is expandable
-%% A string is defined as expandable if it contains itself
-%%  (eg. CFLAGS = -m64 $CFLAGS)
+%%
 is_expandable(InStr) ->
-    case re:run(InStr,"\\\$"++InStr,[{capture,none}]) of
+    case re:run(InStr,"\\\$",[{capture,none}]) of
         match -> true;
         nomatch -> false
     end.
@@ -549,10 +606,12 @@ select_compile_drv_template("$CXX") -> "DRV_CXX_TEMPLATE".
 select_compile_exe_template("$CC")  -> "EXE_CC_TEMPLATE";
 select_compile_exe_template("$CXX") -> "EXE_CXX_TEMPLATE".
 
-select_link_template(Target) ->
-    case target_type(Target) of
-        drv -> "DRV_LINK_TEMPLATE";
-        exe -> "EXE_LINK_TEMPLATE"
+select_link_template(LinkLang, Target) ->
+    case {LinkLang, target_type(Target)} of
+        {cc,  drv} -> "DRV_LINK_TEMPLATE";
+        {cxx, drv} -> "DRV_LINK_CXX_TEMPLATE";
+        {cc,  exe} -> "EXE_LINK_TEMPLATE";
+        {cxx, exe} -> "EXE_LINK_CXX_TEMPLATE"
     end.
 
 target_type(Target) -> target_type1(filename:extension(Target)).
@@ -574,8 +633,8 @@ default_env() ->
     Arch = os:getenv("REBAR_TARGET_ARCH"),
     Vsn = os:getenv("REBAR_TARGET_ARCH_VSN"),
     [
-     {"CC", get_tool(Arch, Vsn,"gcc", "cc")},
-     {"CXX", get_tool(Arch, Vsn,"g++", "c++")},
+     {"CC", get_tool(Arch, Vsn, "gcc", "cc")},
+     {"CXX", get_tool(Arch, Vsn, "g++", "c++")},
      {"AR", get_tool(Arch, "ar", "ar")},
      {"AS", get_tool(Arch, "as", "as")},
      {"CPP", get_tool(Arch, Vsn, "cpp", "cpp")},
@@ -592,12 +651,16 @@ default_env() ->
       "$CC -c $CFLAGS $DRV_CFLAGS $PORT_IN_FILES -o $PORT_OUT_FILE"},
      {"DRV_LINK_TEMPLATE",
       "$CC $PORT_IN_FILES $LDFLAGS $DRV_LDFLAGS -o $PORT_OUT_FILE"},
+     {"DRV_LINK_CXX_TEMPLATE",
+      "$CXX $PORT_IN_FILES $LDFLAGS $DRV_LDFLAGS -o $PORT_OUT_FILE"},
      {"EXE_CXX_TEMPLATE",
       "$CXX -c $CXXFLAGS $EXE_CFLAGS $PORT_IN_FILES -o $PORT_OUT_FILE"},
      {"EXE_CC_TEMPLATE",
       "$CC -c $CFLAGS $EXE_CFLAGS $PORT_IN_FILES -o $PORT_OUT_FILE"},
      {"EXE_LINK_TEMPLATE",
       "$CC $PORT_IN_FILES $LDFLAGS $EXE_LDFLAGS -o $PORT_OUT_FILE"},
+     {"EXE_LINK_CXX_TEMPLATE",
+      "$CXX $PORT_IN_FILES $LDFLAGS $EXE_LDFLAGS -o $PORT_OUT_FILE"},
      {"DRV_CFLAGS" , "-g -Wall -fPIC -MMD $ERL_CFLAGS"},
      {"DRV_LDFLAGS", "-shared $ERL_LDFLAGS"},
      {"EXE_CFLAGS" , "-g -Wall -fPIC -MMD $ERL_CFLAGS"},
@@ -625,17 +688,17 @@ default_env() ->
      %% OS X Leopard flags for 64-bit
      {"darwin9.*-64$", "CFLAGS", "-m64 $CFLAGS"},
      {"darwin9.*-64$", "CXXFLAGS", "-m64 $CXXFLAGS"},
-     {"darwin9.*-64$", "LDFLAGS", "-arch x86_64 $LDFLAGS"},
+     {"darwin9.*-64$", "LDFLAGS", "-arch x86_64 -flat_namespace -undefined suppress $LDFLAGS"},
 
      %% OS X Lion onwards flags for 64-bit
      {"darwin1[0-4].*-64$", "CFLAGS", "-m64 $CFLAGS"},
      {"darwin1[0-4].*-64$", "CXXFLAGS", "-m64 $CXXFLAGS"},
-     {"darwin1[0-4].*-64$", "LDFLAGS", "-arch x86_64 $LDFLAGS"},
+     {"darwin1[0-4].*-64$", "LDFLAGS", "-arch x86_64 -flat_namespace -undefined suppress $LDFLAGS"},
 
      %% OS X Snow Leopard, Lion, and Mountain Lion flags for 32-bit
      {"darwin1[0-2].*-32", "CFLAGS", "-m32 $CFLAGS"},
      {"darwin1[0-2].*-32", "CXXFLAGS", "-m32 $CXXFLAGS"},
-     {"darwin1[0-2].*-32", "LDFLAGS", "-arch i386 $LDFLAGS"},
+     {"darwin1[0-2].*-32", "LDFLAGS", "-arch i386 -flat_namespace -undefined suppress $LDFLAGS"},
 
      %% Windows specific flags
      %% add MS Visual C++ support to rebar on Windows
